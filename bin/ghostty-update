@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+cd $HOME/dev/ghostty
+git pull
+zig build -p $HOME/.local -Doptimize=ReleaseFast
+cd -

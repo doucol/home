@@ -1,0 +1,11 @@
+#!/usr/bin/bash
+set -e  
+ver=$1
+if [[ "$ver" == "" ]]; then
+  echo "version should be supplied"
+  exit 1
+fi
+file=go${ver}.linux-amd64.tar.gz
+wget https://go.dev/dl/${file}
+sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf ${file} && rm ${file}
+

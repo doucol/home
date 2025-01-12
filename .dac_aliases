@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+alias vim=nvim
+alias git=hub
+alias gs='git status'
+alias hs='hub sync'
+alias vimrc='vim ~/.zshrc'
+alias aupd='sudo apt update'
+alias aupg='sudo apt upgrade'
+alias bupd='brew update'
+alias bupg='brew upgrade'
+alias nvchad='NVIM_APPNAME=nvchad nvim'

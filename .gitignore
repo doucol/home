@@ -1,0 +1,19 @@
+# ignore everything
+/*
+
+# except...
+!/.gitignore
+!.dac_aliases
+
+!/bin/
+/bin/*
+!/bin/*-update
+# !/bin/bz-update
+# !/bin/go-update
+# !/bin/ghostty-update
+
+!.config/
+.config/*
+!.config/nvim/
+!.config/ghostty/
+

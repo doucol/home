@@ -1,0 +1,11 @@
+# get latest release asset id
+export BZ_ASSET_ID=$(curl -H "Authorization: token ${GITHUB_ACCESS_TOKEN}" \
+  -H "Accept: application/vnd.github.v3.raw" \
+  -s https://api.github.com/repos/tigera/bz-cli/releases/latest | jq ".assets[] | select(.name|test(\"^bz.*`uname -s | tr [:upper:] [:lower:]`-amd64\"))| .id")
+
+# download release binary
+wget -q --auth-no-challenge --header='Accept:application/octet-stream' \
+  https://${GITHUB_ACCESS_TOKEN}:@api.github.com/repos/tigera/bz-cli/releases/assets/${BZ_ASSET_ID} -O bz
+
+mv ./bz ~/bin/bz
+chmod +x ~/bin/bz
