@@ -12,8 +12,9 @@
 # !/bin/go-update
 # !/bin/ghostty-update
 
-!.config/
-.config/*
-!.config/nvim/
-!.config/ghostty/
+!/.config/
+/.config/*
+!/.config/nvim/
+/.config/nvim/lazy-lock.json
+!/.config/ghostty/
 
