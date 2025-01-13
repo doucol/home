@@ -3,7 +3,7 @@
 
 # except...
 !/.gitignore
-!.dac_aliases
+!/.dac_aliases
 
 !/bin/
 /bin/*
