@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-
-cd $HOME/dev/ghostty
+set -e
+cd "$HOME/dev/ghostty"
 git pull
-zig build -p $HOME/.local -Doptimize=ReleaseFast
+sudo /home/linuxbrew/.linuxbrew/bin/zig build -p /usr -Doptimize=ReleaseFast
+sudo update-desktop-database
 cd -
