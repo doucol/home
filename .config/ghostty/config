@@ -44,6 +44,7 @@
 
 # theme = catppuccin-mocha
 theme = tokyonight_night
+font-family = ""
 font-family = Hack Nerd Font
 # font-family = Hack Nerd Font Mono
 # font-family-bold = Hack Nerd Font Mono Bold
