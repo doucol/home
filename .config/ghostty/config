@@ -42,14 +42,9 @@
 # # Just for example:
 # resize-overlay-duration = 4s 200ms
 
-# theme = catppuccin-mocha
-theme = tokyonight_night
+font-size = 10
 font-family = ""
 font-family = Hack Nerd Font
-# font-family = Hack Nerd Font Mono
-# font-family-bold = Hack Nerd Font Mono Bold
-# font-family-italic = Hack Nerd Font Mono Italic
-# font-family-bold-italic = Hack Nerd Font Mono Bold Italic
-# font-family = MesloLGS Nerd Font
-font-size = 11
+# theme = catppuccin-mocha
+theme = tokyonight_night
 
