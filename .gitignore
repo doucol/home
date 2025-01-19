@@ -5,6 +5,8 @@
 !/.gitignore
 !/.dac_aliases
 
+!/.local/
+/.local/*
 !/.local/bin/
 /.local/bin/*
 !/.local/bin/*-update
