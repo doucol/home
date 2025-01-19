@@ -10,3 +10,4 @@ alias aupg='sudo apt upgrade'
 alias bupd='brew update'
 alias bupg='brew upgrade'
 alias nvchad='NVIM_APPNAME=nvchad nvim'
+alias lg=lazygit
