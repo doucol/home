@@ -5,9 +5,9 @@
 !/.gitignore
 !/.dac_aliases
 
-!/bin/
-/bin/*
-!/bin/*-update
+!/.local/bin/
+/.local/bin/*
+!/.local/bin/*-update
 # !/bin/bz-update
 # !/bin/go-update
 # !/bin/ghostty-update
