@@ -11,8 +11,9 @@ VERSION=${VERSION:-v3.29.1}
 SUBNET=${SUBNET:-192.168.0.0/16}
 SVCNET=${SVCNET:-10.96.0.0/16}
 PORT=${PORT:-6443}
+TMPFILE="/tmp/kind-config-${NAME}.values.yaml"
 
-cat >"/tmp/${NAME}.values.yaml" <<EOF
+cat >"${TMPFILE}" <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -27,6 +28,6 @@ networking:
 EOF
 
 kind delete cluster --name="${NAME}"
-kind create cluster --config "/tmp/${NAME}.values.yaml" --name "${NAME}"
-kubectl create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"
-kubectl create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
+kind create cluster --config "${TMPFILE}" --name "${NAME}"
+kubectl --context="kind-${NAME}" create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"
+kubectl --context="kind-${NAME}" create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
