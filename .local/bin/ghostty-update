@@ -4,4 +4,3 @@ cd "$HOME/dev/ghostty"
 git pull
 sudo /home/linuxbrew/.linuxbrew/bin/zig build -p /usr -Doptimize=ReleaseFast
 sudo update-desktop-database
-cd -
