@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -e
+
+# NOTE: If you are unable to get more than one cluster running, you may need to adjust some kernel settings like so:
+# echo fs.inotify.max_user_watches=655360 | sudo tee -a /etc/sysctl.conf
+# echo fs.inotify.max_user_instances=1280 | sudo tee -a /etc/sysctl.conf
+# sudo sysctl -p
+
+NAME=${NAME:-calico-on-kind}
+VERSION=${VERSION:-v3.29.1}
+SUBNET=${SUBNET:-192.168.0.0/16}
+SVCNET=${SVCNET:-10.96.0.0/16}
+PORT=${PORT:-6443}
+
+cat >"/tmp/${NAME}.values.yaml" <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+- role: worker
+networking:
+  disableDefaultCNI: true
+  podSubnet: "${SUBNET}"
+  serviceSubnet: "${SVCNET}"
+  apiServerPort: ${PORT}
+EOF
+
+kind delete cluster --name="${NAME}"
+kind create cluster --config "/tmp/${NAME}.values.yaml" --name "${NAME}"
+kubectl create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"
+kubectl create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
