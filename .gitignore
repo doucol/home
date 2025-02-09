@@ -3,6 +3,7 @@
 
 # except...
 !/.gitignore
+!/.gitconfig
 !/.dac_aliases
 
 !/.local/

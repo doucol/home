@@ -1,0 +1,9 @@
+[user]
+  email = 540588+doucol@users.noreply.github.com
+  name = Doug Collier
+[init]
+  defaultBranch = main
+[url "git@github.com:"]
+  insteadOf = https://github.com/
+[include]
+  path = ~/.gitconfig.local
