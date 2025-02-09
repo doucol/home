@@ -32,7 +32,7 @@ require("lazy").setup({
   },
   -- install = { colorscheme = { "tokyonight", "habamax" } },
   -- install = { colorscheme = { "habamax" } },
-  -- install = { colorscheme = { "tokyonight" } },
+  -- install = { colorscheme = { "sorbet" } },
   checker = {
     enabled = true, -- check for plugin updates periodically
     notify = false, -- notify on update

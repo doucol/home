@@ -46,5 +46,7 @@ font-size = 10
 font-family = ""
 font-family = Hack Nerd Font
 # theme = catppuccin-mocha
+# theme = CobaltNext-Dark
 theme = tokyonight_night
-
+mouse-scroll-multiplier = 10
+scrollback-limit = 1000000
