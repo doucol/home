@@ -13,6 +13,11 @@ SVCNET=${SVCNET:-10.96.0.0/16}
 PORT=${PORT:-6443}
 ENCAP=${ENCAP:-VXLANCrossSubnet}
 TMPFILE="/tmp/kind-config-${NAME}.values.yaml"
+KUBECTL="kubectl --context=kind-${NAME}"
+if [[ "${VERSION}" == "lasthash" && "${OPYAML}" == "" ]]; then
+  OPYAML=$(curl --silent https://latest-os.docs.eng.tigera.net/master.txt | xargs)manifests/tigera-operator.yaml
+fi
+OPYAML=${OPYAML:-"https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"}
 
 cat >"${TMPFILE}" <<EOF
 kind: Cluster
@@ -41,14 +46,15 @@ else
   echo "Warning: no docker auth secret is being applied to the nodes since '$HOME/.docker/config.json' does not exist"
 fi
 
-kubectl --context="kind-${NAME}" create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"
-while ! kubectl --context="kind-${NAME}" wait --for=condition=established --timeout=60s crd/whiskers.operator.tigera.io &>/dev/null; do
+echo "Installing Calico OSS operator using: ${OPYAML}"
+${KUBECTL} create -f "${OPYAML}"
+while ! ${KUBECTL} wait --for=condition=established --timeout=60s crd/whiskers.operator.tigera.io &>/dev/null; do
   echo "Waiting for Calico CRDs to be created..."
   sleep 2
 done
 
 # Create calico custom resource configurations to kick off the install
-kubectl --context="kind-${NAME}" create -f - <<EOF
+${KUBECTL} create -f - <<EOF
 apiVersion: operator.tigera.io/v1
 kind: Installation
 metadata:
@@ -75,18 +81,18 @@ kind: Whisker
 metadata:
   name: default
 EOF
-#kubectl --context="kind-${NAME}" create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
+#${KUBECTL} create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
 
-while ! kubectl --context="kind-${NAME}" wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=60s --all tigerastatuses 2>/dev/null; do
+while ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=60s --all tigerastatuses 2>/dev/null; do
   echo "Waiting for all 'tigerastatus' resources to become available..."
   sleep 2
 done
 
-if ! kubectl --context="kind-${NAME}" wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker &>/dev/null; then
+if ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker &>/dev/null; then
   # Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
   echo "Whisker not yet deployed! -- restarting the tigera/calico operator to kick the whisker deployment into gear..."
-  kubectl --context="kind-${NAME}" delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
-  while ! kubectl --context="kind-${NAME}" wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=30s tigerastatuses/whisker 2>/dev/null; do
+  ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
+  while ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=30s tigerastatuses/whisker 2>/dev/null; do
     echo "Waiting for 'tigerastatus/whisker' resource to become available..."
     sleep 2
   done
