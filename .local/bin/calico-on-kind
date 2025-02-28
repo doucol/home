@@ -21,7 +21,6 @@ nodes:
 - role: control-plane
 - role: worker
 - role: worker
-- role: worker
 networking:
   disableDefaultCNI: true
   podSubnet: "${SUBNET}"
@@ -83,9 +82,9 @@ while ! kubectl --context="kind-${NAME}" wait --for='jsonpath={.status.condition
   sleep 2
 done
 
-if ! kubectl --context="kind-${NAME}" wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker 2>/dev/null; then
+if ! kubectl --context="kind-${NAME}" wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker &>/dev/null; then
   # Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
-  echo "Restarting the tigera/calico operator to kick the whisker deployment into gear..."
+  echo "Whisker not yet deployed! -- restarting the tigera/calico operator to kick the whisker deployment into gear..."
   kubectl --context="kind-${NAME}" delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
   while ! kubectl --context="kind-${NAME}" wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=30s tigerastatuses/whisker 2>/dev/null; do
     echo "Waiting for 'tigerastatus/whisker' resource to become available..."
