@@ -33,21 +33,23 @@ kind delete cluster --name="${NAME}"
 kind create cluster --config "${TMPFILE}" --name "${NAME}"
 
 if [[ -f "$HOME/.docker/config.json" ]]; then
+  echo "Copying your docker auth secrets ($HOME/.docker/config.json) to each cluster node..."
   for node in $(kind get nodes --name="${NAME}"); do
     docker cp "$HOME/.docker/config.json" "${node}:/var/lib/kubelet/config.json"
     docker exec "${node}" systemctl restart kubelet.service
   done
 else
-  echo "Warning: no pull secret is being applied to the kind nodes since '$HOME/.docker/config.json' does not exist"
+  echo "Warning: no docker auth secret is being applied to the nodes since '$HOME/.docker/config.json' does not exist"
 fi
 
 kubectl --context="kind-${NAME}" create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"
-while ! kubectl wait --for condition=established --timeout=60s crd/whiskers.operator.tigera.io &>/dev/null; do
-  echo "Waiting for CRD whiskers.operator.tigera.io to be established..."
+while ! kubectl --context="kind-${NAME}" wait --for=condition=established --timeout=60s crd/whiskers.operator.tigera.io &>/dev/null; do
+  echo "Waiting for Calico CRDs to be created..."
   sleep 2
 done
 
-kubectl create -f - <<EOF
+# Create calico custom resource configurations to kick off the install
+kubectl --context="kind-${NAME}" create -f - <<EOF
 apiVersion: operator.tigera.io/v1
 kind: Installation
 metadata:
@@ -74,15 +76,19 @@ kind: Whisker
 metadata:
   name: default
 EOF
-
-# kubectl create -f - <<EOF
-# apiVersion: operator.tigera.io/v1
-# kind: Whisker
-# metadata:
-#   name: default
-# EOF
-
-# Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
-kubectl delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
-
 #kubectl --context="kind-${NAME}" create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
+
+while ! kubectl --context="kind-${NAME}" wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=60s --all tigerastatuses 2>/dev/null; do
+  echo "Waiting for all 'tigerastatus' resources to become available..."
+  sleep 2
+done
+
+if ! kubectl --context="kind-${NAME}" wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker 2>/dev/null; then
+  # Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
+  echo "Restarting the tigera/calico operator to kick the whisker deployment into gear..."
+  kubectl --context="kind-${NAME}" delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
+  while ! kubectl --context="kind-${NAME}" wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=30s tigerastatuses/whisker 2>/dev/null; do
+    echo "Waiting for 'tigerastatus/whisker' resource to become available..."
+    sleep 2
+  done
+fi
