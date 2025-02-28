@@ -6,7 +6,7 @@ set -e
 # echo fs.inotify.max_user_instances=1280 | sudo tee -a /etc/sysctl.conf
 # sudo sysctl -p
 
-NAME=${NAME:-calico-on-kind}
+NAME=${NAME:-calico}
 VERSION=${VERSION:-master}
 SUBNET=${SUBNET:-10.244.0.0/16}
 SVCNET=${SVCNET:-10.96.0.0/16}
