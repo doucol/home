@@ -7,10 +7,11 @@ set -e
 # sudo sysctl -p
 
 NAME=${NAME:-calico-on-kind}
-VERSION=${VERSION:-v3.29.1}
-SUBNET=${SUBNET:-192.168.0.0/16}
+VERSION=${VERSION:-master}
+SUBNET=${SUBNET:-10.244.0.0/16}
 SVCNET=${SVCNET:-10.96.0.0/16}
 PORT=${PORT:-6443}
+ENCAP=${ENCAP:-VXLANCrossSubnet}
 TMPFILE="/tmp/kind-config-${NAME}.values.yaml"
 
 cat >"${TMPFILE}" <<EOF
@@ -18,6 +19,7 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+- role: worker
 - role: worker
 - role: worker
 networking:
@@ -30,4 +32,35 @@ EOF
 kind delete cluster --name="${NAME}"
 kind create cluster --config "${TMPFILE}" --name "${NAME}"
 kubectl --context="kind-${NAME}" create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"
-kubectl --context="kind-${NAME}" create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
+while ! kubectl wait --for condition=established --timeout=60s crd/whiskers.operator.tigera.io; do sleep 1; done
+
+kubectl create -f - <<EOF
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  # registry: docker.io/
+  # Configures Calico networking.
+  calicoNetwork:
+    ipPools:
+    - name: default-ipv4-ippool
+      blockSize: 26
+      cidr: ${SUBNET}
+      encapsulation: ${ENCAP}
+      natOutgoing: Enabled
+      nodeSelector: all()
+---
+apiVersion: operator.tigera.io/v1
+kind: APIServer
+metadata:
+  name: default
+spec: {}
+---
+apiVersion: operator.tigera.io/v1
+kind: Whisker
+metadata:
+  name: default
+EOF
+
+#kubectl --context="kind-${NAME}" create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
