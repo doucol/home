@@ -7,24 +7,30 @@ set -o pipefail
 # echo fs.inotify.max_user_instances=1280 | sudo tee -a /etc/sysctl.conf
 # sudo sysctl -p
 
+version_greater_equal() {
+  printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
+}
+
 NAME=${NAME:-calico}
 VERSION=${VERSION:-master}
-SUBNET=${SUBNET:-10.244.0.0/16}
+PODNET=${PODNET:-10.244.0.0/16}
 SVCNET=${SVCNET:-10.96.0.0/16}
 PORT=${PORT:-6443}
 ENCAP=${ENCAP:-VXLANCrossSubnet}
-TMPFILE="/tmp/kind-config-${NAME}.values.yaml"
 KUBECTL="kubectl --context=kind-${NAME}"
+WHISKER=false
 if [[ "${VERSION}" == "lasthash" && "${OPYAML}" == "" ]]; then
-  OPYAML=$(curl --silent https://latest-os.docs.eng.tigera.net/master.txt | xargs)manifests/tigera-operator.yaml
+  OPYAML=$(curl -s https://latest-os.docs.eng.tigera.net/master.txt | xargs)manifests/tigera-operator.yaml
+elif [[ "${VERSION}" == "latest" && "${OPYAML}" == "" ]]; then
+  VERSION=$(curl -s "https://api.github.com/repos/projectcalico/calico/tags" | jq -r '.[].name' | grep -E 'v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 | xargs)
 fi
-if [[ "${VERSION}" == "latest" && "${OPYAML}" == "" ]]; then
-  LATEST_TAG=$(curl -s "https://api.github.com/repos/projectcalico/calico/tags" | jq -r '.[].name' | grep -E 'v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 | xargs)
-  OPYAML="https://raw.githubusercontent.com/projectcalico/calico/${LATEST_TAG}/manifests/tigera-operator.yaml"
+if [[ "${VERSION}" == "lasthash" || "${VERSION}" == "master" ]]; then
+  WHISKER=true
 fi
 OPYAML=${OPYAML:-"https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"}
 
-cat >"${TMPFILE}" <<EOF
+kind delete cluster --name="${NAME}"
+kind create cluster --name="${NAME}" --config - <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -33,13 +39,10 @@ nodes:
 - role: worker
 networking:
   disableDefaultCNI: true
-  podSubnet: "${SUBNET}"
-  serviceSubnet: "${SVCNET}"
+  podSubnet: ${PODNET}
+  serviceSubnet: ${SVCNET}
   apiServerPort: ${PORT}
 EOF
-
-kind delete cluster --name="${NAME}"
-kind create cluster --config "${TMPFILE}" --name "${NAME}"
 
 if [[ -f "$HOME/.docker/config.json" ]]; then
   echo "Copying your docker auth secrets ($HOME/.docker/config.json) to each cluster node..."
@@ -51,12 +54,14 @@ else
   echo "Warning: no docker auth secret is being applied to the nodes since '$HOME/.docker/config.json' does not exist"
 fi
 
+echo ""
 echo "Installing Calico OSS operator using: ${OPYAML}"
 ${KUBECTL} create -f "${OPYAML}"
-while ! ${KUBECTL} wait --for=condition=established --timeout=60s crd/whiskers.operator.tigera.io &>/dev/null; do
+while ! ${KUBECTL} wait --for=condition=established --timeout=60s crd/tigerastatuses.operator.tigera.io &>/dev/null; do
   echo "Waiting for Calico CRDs to be created..."
   sleep 2
 done
+sleep 2
 
 # Create calico custom resource configurations to kick off the install
 ${KUBECTL} create -f - <<EOF
@@ -65,12 +70,11 @@ kind: Installation
 metadata:
   name: default
 spec:
-  registry: docker.io/
   calicoNetwork:
     ipPools:
     - name: default-ipv4-ippool
       blockSize: 26
-      cidr: ${SUBNET}
+      cidr: ${PODNET}
       encapsulation: ${ENCAP}
       natOutgoing: Enabled
       nodeSelector: all()
@@ -80,12 +84,8 @@ kind: APIServer
 metadata:
   name: default
 spec: {}
----
-apiVersion: operator.tigera.io/v1
-kind: Whisker
-metadata:
-  name: default
 EOF
+
 #${KUBECTL} create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
 
 while ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=60s --all tigerastatuses 2>/dev/null; do
@@ -93,15 +93,30 @@ while ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available
   sleep 2
 done
 
-if ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker &>/dev/null; then
-  # Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
-  echo ""
-  echo "Whisker not yet deployed! -- restarting the tigera/calico operator to kick the whisker deployment into gear..."
-  ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
-  while ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=30s tigerastatuses/whisker 2>/dev/null; do
-    echo "Waiting for 'tigerastatus/whisker' resource to become available..."
-    sleep 2
-  done
+${KUBECTL} wait --timeout=30s --for=create clusterinformations.crd.projectcalico.org/default
+CALICO_VERSION=$(${KUBECTL} get "clusterinformations.crd.projectcalico.org/default" -o=json | jq -r '.spec.calicoVersion' | xargs)
+echo "Calico Version: ${CALICO_VERSION}"
+version_greater_equal "${CALICO_VERSION}" v3.30 && WHISKER=true
+
+if [[ "${WHISKER}" == "true" ]]; then
+
+  ${KUBECTL} create -f - <<EOF
+apiVersion: operator.tigera.io/v1
+kind: Whisker
+metadata:
+  name: default
+EOF
+
+  # NOTE: Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
+  if ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker &>/dev/null; then
+    echo ""
+    echo "Whisker not yet deployed! -- restarting the tigera/calico operator to kick the whisker deployment into gear..."
+    ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
+    while ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=30s tigerastatuses/whisker 2>/dev/null; do
+      echo "Waiting for 'tigerastatus/whisker' resource to become available..."
+      sleep 2
+    done
+  fi
 fi
 
 if [[ "${DEMOAPP}" == "true" ]]; then
