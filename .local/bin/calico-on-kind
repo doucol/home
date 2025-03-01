@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -e
+set -o pipefail
 
 # NOTE: If you are unable to get more than one cluster running, you may need to adjust some kernel settings like so:
 # echo fs.inotify.max_user_watches=655360 | sudo tee -a /etc/sysctl.conf
@@ -16,6 +17,10 @@ TMPFILE="/tmp/kind-config-${NAME}.values.yaml"
 KUBECTL="kubectl --context=kind-${NAME}"
 if [[ "${VERSION}" == "lasthash" && "${OPYAML}" == "" ]]; then
   OPYAML=$(curl --silent https://latest-os.docs.eng.tigera.net/master.txt | xargs)manifests/tigera-operator.yaml
+fi
+if [[ "${VERSION}" == "latest" && "${OPYAML}" == "" ]]; then
+  LATEST_TAG=$(curl -s "https://api.github.com/repos/projectcalico/calico/tags" | jq -r '.[].name' | grep -E 'v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 | xargs)
+  OPYAML="https://raw.githubusercontent.com/projectcalico/calico/${LATEST_TAG}/manifests/tigera-operator.yaml"
 fi
 OPYAML=${OPYAML:-"https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"}
 
@@ -90,10 +95,17 @@ done
 
 if ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker &>/dev/null; then
   # Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
+  echo ""
   echo "Whisker not yet deployed! -- restarting the tigera/calico operator to kick the whisker deployment into gear..."
   ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
   while ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=30s tigerastatuses/whisker 2>/dev/null; do
     echo "Waiting for 'tigerastatus/whisker' resource to become available..."
     sleep 2
   done
+fi
+
+if [[ "${DEMOAPP}" == "true" ]]; then
+  echo ""
+  echo "Installing Demo App 'GoogleCloudPlatform/microservices-demo'..."
+  ${KUBECTL} create -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/refs/heads/main/release/kubernetes-manifests.yaml
 fi
