@@ -54,6 +54,29 @@ else
   echo "Warning: no docker auth secret is being applied to the nodes since '$HOME/.docker/config.json' does not exist"
 fi
 
+if [[ "${VERSION}" == "master" ]]; then
+  images=(
+    calico/node:master
+    calico/cni:master
+    calico/typha:master
+    calico/kube-controllers:master
+    calico/csi:master
+    calico/node-driver-registrar:master
+    calico/apiserver:master
+    calico/whisker:master
+    calico/whisker-backend:master
+    calico/goldmane:master
+    calico/guardian:master
+    quay.io/tigera/operator:master
+  )
+
+  # Loop through each image and pull it
+  for image in "${images[@]}"; do
+    docker pull "$image"
+    kind load docker-image "$image" --name="${NAME}"
+  done
+fi
+
 echo ""
 echo "Installing Calico OSS operator using: ${OPYAML}"
 ${KUBECTL} create -f "${OPYAML}"
