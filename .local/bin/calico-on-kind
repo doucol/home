@@ -144,7 +144,7 @@ EOF
   fi
 fi
 
-if [[ "${DEMOAPP}" == "true" ]]; then
+if [[ "${DEMOAPP}" == "true" || "${DEMO_APP}" == "true" ]]; then
   echo ""
   echo "Installing Demo App 'GoogleCloudPlatform/microservices-demo'..."
   ${KUBECTL} create -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/refs/heads/main/release/kubernetes-manifests.yaml
