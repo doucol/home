@@ -54,7 +54,9 @@ else
   echo "Warning: no docker auth secret is being applied to the nodes since '$HOME/.docker/config.json' does not exist"
 fi
 
-if [[ "${VERSION}" == "master" ]]; then
+# If IMAGE_PRELOAD is set to true, we'll pull the images and load them into the kind cluster
+# to accelerate the setup / install process (just 'master' for now)
+if [[ "${VERSION}" == "master" && "${IMAGE_PRELOAD}" == "true" ]]; then
   images=(
     calico/node:master
     calico/cni:master
