@@ -10,11 +10,18 @@ set -o pipefail
 version_greater_equal() {
   printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
 }
+worker_nodes() {
+  for i in $(seq 1 ${WORKERS}); do
+    wn="- role: worker"$'\n'"${wn}"
+  done
+  echo "${wn}"
+}
 
 NAME=${NAME:-calico}
 VERSION=${VERSION:-master}
 PODNET=${PODNET:-10.244.0.0/16}
 SVCNET=${SVCNET:-10.96.0.0/16}
+WORKERS=${WORKERS:-2}
 PORT=${PORT:-6443}
 ENCAP=${ENCAP:-VXLANCrossSubnet}
 KUBECTL="kubectl --context=kind-${NAME}"
@@ -28,6 +35,7 @@ if [[ "${VERSION}" == "lasthash" || "${VERSION}" == "master" ]]; then
   WHISKER=true
 fi
 OPYAML=${OPYAML:-"https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"}
+WORKER_NODES=$(worker_nodes)
 
 kind delete cluster --name="${NAME}"
 kind create cluster --name="${NAME}" --config - <<EOF
@@ -35,8 +43,7 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
-- role: worker
-- role: worker
+${WORKER_NODES}
 networking:
   disableDefaultCNI: true
   podSubnet: ${PODNET}
@@ -135,7 +142,7 @@ EOF
   # NOTE: Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
   if ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker &>/dev/null; then
     echo ""
-    echo "Whisker not yet deployed! -- restarting the tigera/calico operator to kick the whisker deployment into gear..."
+    echo "Deploying whisker..."
     ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
     while ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=30s tigerastatuses/whisker 2>/dev/null; do
       echo "Waiting for 'tigerastatus/whisker' resource to become available..."
