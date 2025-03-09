@@ -15,6 +15,7 @@
 # !/bin/go-update
 # !/bin/ghostty-update
 !/.local/bin/calico-on-kind
+!/.local/bin/calico-latest
 
 !/.config/
 /.config/*
