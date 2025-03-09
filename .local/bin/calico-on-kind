@@ -11,8 +11,8 @@ version_greater_equal() {
   printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
 }
 worker_nodes() {
-  for i in $(seq 1 ${WORKERS}); do
-    wn="- role: worker"$'\n'"${wn}"
+  for i in $(seq 1 "${WORKERS}"); do
+    wn="# worker ${i}"$'\n'"- role: worker"$'\n'"${wn}"
   done
   echo "${wn}"
 }
@@ -131,6 +131,8 @@ echo "Calico Version: ${CALICO_VERSION}"
 version_greater_equal "${CALICO_VERSION}" v3.30 && WHISKER=true
 
 if [[ "${WHISKER}" == "true" ]]; then
+  echo ""
+  echo "Deploying whisker..."
 
   ${KUBECTL} create -f - <<EOF
 apiVersion: operator.tigera.io/v1
@@ -141,8 +143,6 @@ EOF
 
   # NOTE: Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
   if ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker &>/dev/null; then
-    echo ""
-    echo "Deploying whisker..."
     ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
     while ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=30s tigerastatuses/whisker 2>/dev/null; do
       echo "Waiting for 'tigerastatus/whisker' resource to become available..."
