@@ -3,11 +3,12 @@ set -e
 
 NAME=${NAME:-calico}
 IMAGE=${IMAGE:-node}
+KUBECTL="kubectl --context=kind-${NAME}"
 
 docker tag "calico/${IMAGE}:latest" "calico/${IMAGE}:master"
 kind --name="${NAME}" load docker-image "calico/${IMAGE}:master"
 if [[ "${IMAGE}" == "whisker" ]]; then
-  kubectl --namespace="calico-system" delete pod -l "k8s-app=whisker"
+  ${KUBECTL} --namespace="calico-system" delete pod -l "k8s-app=whisker"
 else
-  kubectl --namespace="calico-system" delete pod -l "k8s-app=calico-${IMAGE}"
+  ${KUBECTL} --namespace="calico-system" delete pod -l "k8s-app=calico-${IMAGE}"
 fi
