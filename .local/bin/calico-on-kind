@@ -10,6 +10,7 @@ set -o pipefail
 version_greater_equal() {
   printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
 }
+
 worker_nodes() {
   for i in $(seq 1 "${WORKERS}"); do
     wn="# worker ${i}"$'\n'"- role: worker"$'\n'"${wn}"
@@ -17,8 +18,19 @@ worker_nodes() {
   echo "${wn}"
 }
 
+function install_demo_app() {
+  if [[ "${DEMOAPP}" == "true" || "${DEMO_APP}" == "true" ]]; then
+    echo ""
+    echo "Installing Demo App 'GoogleCloudPlatform/microservices-demo'..."
+    ${KUBECTL} create -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/refs/heads/main/release/kubernetes-manifests.yaml
+    return $?
+  fi
+  return 0
+}
+
 NAME=${NAME:-calico}
 VERSION=${VERSION:-master}
+DP=${DP:-BPF}
 PODNET=${PODNET:-10.244.0.0/16}
 SVCNET=${SVCNET:-10.96.0.0/16}
 WORKERS=${WORKERS:-2}
@@ -26,6 +38,12 @@ PORT=${PORT:-6443}
 ENCAP=${ENCAP:-VXLANCrossSubnet}
 KUBECTL="kubectl --context=kind-${NAME}"
 WHISKER=false
+
+if [[ "${DAONLY}" == "true" ]]; then
+  DEMOAPP=true install_demo_app
+  exit $?
+fi
+
 if [[ "${VERSION}" == "lasthash" && "${OPYAML}" == "" ]]; then
   OPYAML=$(curl -s https://latest-os.docs.eng.tigera.net/master.txt | xargs)manifests/tigera-operator.yaml
 elif [[ "${VERSION}" == "latest" && "${OPYAML}" == "" ]]; then
@@ -103,6 +121,7 @@ metadata:
   name: default
 spec:
   calicoNetwork:
+    linuxDataplane: ${DP}
     ipPools:
     - name: default-ipv4-ippool
       blockSize: 26
@@ -151,8 +170,4 @@ EOF
   fi
 fi
 
-if [[ "${DEMOAPP}" == "true" || "${DEMO_APP}" == "true" ]]; then
-  echo ""
-  echo "Installing Demo App 'GoogleCloudPlatform/microservices-demo'..."
-  ${KUBECTL} create -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/refs/heads/main/release/kubernetes-manifests.yaml
-fi
+install_demo_app
