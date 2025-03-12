@@ -18,15 +18,9 @@ ENCAP=${ENCAP:-VXLANCrossSubnet}
 KUBECTL="kubectl --context=kind-${NAME}"
 KIND="kind --name=${NAME}"
 WHISKER=false
-if [[ "${VERSION}" == "lasthash" && "${OPYAML}" == "" ]]; then
-  OPYAML=$(curl -s https://latest-os.docs.eng.tigera.net/master.txt | xargs)manifests/tigera-operator.yaml
-elif [[ "${VERSION}" == "latest" && "${OPYAML}" == "" ]]; then
-  VERSION=$(curl -s "https://api.github.com/repos/projectcalico/calico/tags" | jq -r '.[].name' | grep -E 'v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 | xargs)
-fi
 if [[ "${VERSION}" == "lasthash" || "${VERSION}" == "master" ]]; then
   WHISKER=true
 fi
-OPYAML=${OPYAML:-"https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"}
 
 function worker_nodes() {
   for i in $(seq 1 "${WORKERS}"); do
@@ -133,6 +127,13 @@ function install_docker_secrets() {
 }
 
 function install_calico_oss() {
+  if [[ "${VERSION}" == "lasthash" && "${OPYAML}" == "" ]]; then
+    OPYAML=$(curl -s https://latest-os.docs.eng.tigera.net/master.txt | xargs)manifests/tigera-operator.yaml
+  elif [[ "${VERSION}" == "latest" && "${OPYAML}" == "" ]]; then
+    VERSION=$(curl -s "https://api.github.com/repos/projectcalico/calico/tags" | jq -r '.[].name' | grep -E 'v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 | xargs)
+  fi
+  OPYAML=${OPYAML:-"https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"}
+
   echo ""
   echo "Installing Calico OSS operator using: ${OPYAML}"
   ${KUBECTL} create -f "${OPYAML}"
