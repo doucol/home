@@ -94,71 +94,57 @@ function install_demo_app() {
   return 0
 }
 
-if [[ "${DAONLY}" == "true" ]]; then
-  DEMOAPP=true install_demo_app
-  exit $?
-fi
+function preload_master_images() {
+  # If IMAGE_PRELOAD is set to true, we'll pull the images and load them into the kind cluster
+  # to accelerate the setup / install process (just 'master' for now)
+  if [[ "${VERSION}" == "master" && "${IMAGE_PRELOAD}" == "true" ]]; then
+    images=(
+      calico/node:master
+      calico/cni:master
+      calico/typha:master
+      calico/kube-controllers:master
+      calico/csi:master
+      calico/node-driver-registrar:master
+      calico/apiserver:master
+      calico/whisker:master
+      calico/whisker-backend:master
+      calico/goldmane:master
+      calico/guardian:master
+      quay.io/tigera/operator:master
+    )
 
-${KIND} delete cluster
-${KIND} create cluster --config - <<EOF
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-${WORKER_NODES}
-networking:
-  disableDefaultCNI: true
-  podSubnet: ${PODNET}
-  serviceSubnet: ${SVCNET}
-  apiServerPort: ${PORT}
-EOF
+    # Loop through each image and pull it
+    for image in "${images[@]}"; do
+      docker pull "$image"
+      ${KIND} load docker-image "$image"
+    done
+  fi
+}
 
-if [[ -f "$HOME/.docker/config.json" ]]; then
-  echo "Copying your docker auth secrets ($HOME/.docker/config.json) to each cluster node..."
-  for node in $(${KIND} get nodes); do
-    docker cp "$HOME/.docker/config.json" "${node}:/var/lib/kubelet/config.json"
-    docker exec "${node}" systemctl restart kubelet.service
+function install_docker_secrets() {
+  if [[ -f "$HOME/.docker/config.json" ]]; then
+    echo "Copying your docker auth secrets ($HOME/.docker/config.json) to each cluster node..."
+    for node in $(${KIND} get nodes); do
+      docker cp "$HOME/.docker/config.json" "${node}:/var/lib/kubelet/config.json"
+      docker exec "${node}" systemctl restart kubelet.service
+    done
+  else
+    echo "Warning: no docker auth secret is being applied to the nodes since '$HOME/.docker/config.json' does not exist"
+  fi
+}
+
+function install_calico_oss() {
+  echo ""
+  echo "Installing Calico OSS operator using: ${OPYAML}"
+  ${KUBECTL} create -f "${OPYAML}"
+  while ! ${KUBECTL} wait --for=condition=established --timeout=60s crd/tigerastatuses.operator.tigera.io &>/dev/null; do
+    echo "Waiting for Calico CRDs to be created..."
+    sleep 2
   done
-else
-  echo "Warning: no docker auth secret is being applied to the nodes since '$HOME/.docker/config.json' does not exist"
-fi
-
-# If IMAGE_PRELOAD is set to true, we'll pull the images and load them into the kind cluster
-# to accelerate the setup / install process (just 'master' for now)
-if [[ "${VERSION}" == "master" && "${IMAGE_PRELOAD}" == "true" ]]; then
-  images=(
-    calico/node:master
-    calico/cni:master
-    calico/typha:master
-    calico/kube-controllers:master
-    calico/csi:master
-    calico/node-driver-registrar:master
-    calico/apiserver:master
-    calico/whisker:master
-    calico/whisker-backend:master
-    calico/goldmane:master
-    calico/guardian:master
-    quay.io/tigera/operator:master
-  )
-
-  # Loop through each image and pull it
-  for image in "${images[@]}"; do
-    docker pull "$image"
-    ${KIND} load docker-image "$image"
-  done
-fi
-
-echo ""
-echo "Installing Calico OSS operator using: ${OPYAML}"
-${KUBECTL} create -f "${OPYAML}"
-while ! ${KUBECTL} wait --for=condition=established --timeout=60s crd/tigerastatuses.operator.tigera.io &>/dev/null; do
-  echo "Waiting for Calico CRDs to be created..."
   sleep 2
-done
-sleep 2
 
-# Create calico custom resource configurations to kick off the install
-${KUBECTL} create -f - <<EOF
+  # Create calico custom resource configurations to kick off the install
+  ${KUBECTL} create -f - <<EOF
 apiVersion: operator.tigera.io/v1
 kind: Installation
 metadata:
@@ -181,17 +167,48 @@ metadata:
 spec: {}
 EOF
 
-#${KUBECTL} create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
+  #${KUBECTL} create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
 
-while ! ${KUBECTL} wait --for=condition=available --timeout=60s --all tigerastatuses 2>/dev/null; do
-  echo "Waiting for all 'tigerastatus' resources to become available..."
-  sleep 2
-done
+  while ! ${KUBECTL} wait --for=condition=available --timeout=60s --all tigerastatuses 2>/dev/null; do
+    echo "Waiting for all 'tigerastatus' resources to become available..."
+    sleep 2
+  done
 
-${KUBECTL} wait --timeout=30s --for=create clusterinformations.crd.projectcalico.org/default
-CALICO_VERSION=$(${KUBECTL} get "clusterinformations.crd.projectcalico.org/default" -o=json | jq -r '.spec.calicoVersion' | xargs)
-echo ""
-echo "Installed Calico version: ${CALICO_VERSION}"
+  ${KUBECTL} wait --timeout=30s --for=create clusterinformations.crd.projectcalico.org/default
+  CALICO_VERSION=$(${KUBECTL} get "clusterinformations.crd.projectcalico.org/default" -o=json | jq -r '.spec.calicoVersion' | xargs)
+
+  echo ""
+  echo "Installed Calico version: ${CALICO_VERSION}"
+}
+
+function create_kind_cluster() {
+  ${KIND} delete cluster
+  ${KIND} create cluster --config - <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+${WORKER_NODES}
+networking:
+  disableDefaultCNI: true
+  podSubnet: ${PODNET}
+  serviceSubnet: ${SVCNET}
+  apiServerPort: ${PORT}
+EOF
+}
+
+if [[ "${DAONLY}" == "true" ]]; then
+  DEMOAPP=true install_demo_app
+  exit $?
+fi
+
+create_kind_cluster
+
+install_docker_secrets
+
+preload_master_images
+
+install_calico_oss
 
 install_whisker
 
