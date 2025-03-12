@@ -7,13 +7,6 @@ set -o pipefail
 # echo fs.inotify.max_user_instances=1280 | sudo tee -a /etc/sysctl.conf
 # sudo sysctl -p
 
-function worker_nodes() {
-  for i in $(seq 1 "${WORKERS}"); do
-    wn="# worker ${i}"$'\n'"- role: worker"$'\n'"${wn}"
-  done
-  echo "${wn}"
-}
-
 NAME=${NAME:-calico}
 VERSION=${VERSION:-master}
 DP=${DP:-BPF}
@@ -34,7 +27,13 @@ if [[ "${VERSION}" == "lasthash" || "${VERSION}" == "master" ]]; then
   WHISKER=true
 fi
 OPYAML=${OPYAML:-"https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"}
-WORKER_NODES=$(worker_nodes)
+
+function worker_nodes() {
+  for i in $(seq 1 "${WORKERS}"); do
+    wn="# worker ${i}"$'\n'"- role: worker"$'\n'"${wn}"
+  done
+  echo "${wn}"
+}
 
 function version_greater_equal() {
   printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
@@ -182,6 +181,7 @@ EOF
 }
 
 function create_kind_cluster() {
+  WORKER_NODES=$(worker_nodes)
   ${KIND} delete cluster
   ${KIND} create cluster --config - <<EOF
 kind: Cluster
@@ -197,19 +197,33 @@ networking:
 EOF
 }
 
-if [[ "${DAONLY}" == "true" ]]; then
+function install_demo_only() {
   DEMOAPP=true install_demo_app
   exit $?
-fi
+}
 
-create_kind_cluster
+function create_kind_cluster_and_install() {
+  create_kind_cluster
 
-install_docker_secrets
+  install_docker_secrets
 
-preload_master_images
+  preload_master_images
 
-install_calico_oss
+  install_calico_oss
 
-install_whisker
+  install_whisker
 
-install_demo_app
+  install_demo_app
+}
+
+function main() {
+  if [[ "${1}" == "demo" ]]; then
+    install_demo_only
+  elif [[ "${1}" == "help" ]]; then
+    echo "help is on the way..."
+  else
+    create_kind_cluster_and_install
+  fi
+}
+
+main "${1}"
