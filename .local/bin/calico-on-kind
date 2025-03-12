@@ -14,7 +14,7 @@ PODNET=${PODNET:-10.244.0.0/16}
 SVCNET=${SVCNET:-10.96.0.0/16}
 WORKERS=${WORKERS:-2}
 PORT=${PORT:-6443}
-ENCAP=${ENCAP:-VXLANCrossSubnet}
+ENCAP=${ENCAP:-IPIP}
 KUBECTL="kubectl --context=kind-${NAME}"
 KIND="kind --name=${NAME}"
 WHISKER=false
