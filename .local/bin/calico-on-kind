@@ -7,23 +7,67 @@ set -o pipefail
 # echo fs.inotify.max_user_instances=1280 | sudo tee -a /etc/sysctl.conf
 # sudo sysctl -p
 
-version_greater_equal() {
+function version_greater_equal() {
   printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
 }
 
-worker_nodes() {
+function worker_nodes() {
   for i in $(seq 1 "${WORKERS}"); do
     wn="# worker ${i}"$'\n'"- role: worker"$'\n'"${wn}"
   done
   echo "${wn}"
 }
 
+function install_whisker() {
+  version_greater_equal "${CALICO_VERSION}" v3.30 && WHISKER=true
+
+  if [[ "${WHISKER}" == "true" ]]; then
+    echo ""
+    echo "Deploying whisker..."
+
+    ${KUBECTL} create -f - <<EOF
+apiVersion: operator.tigera.io/v1
+kind: Whisker
+metadata:
+  name: default
+EOF
+
+    # NOTE: Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
+    if ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker &>/dev/null; then
+      ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
+      while ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=30s tigerastatuses/whisker 2>/dev/null; do
+        echo "Waiting for 'tigerastatus/whisker' resource to become available..."
+        sleep 2
+      done
+    fi
+  fi
+}
+
 function install_demo_app() {
   if [[ "${DEMOAPP}" == "true" || "${DEMO_APP}" == "true" ]]; then
+    READY=false
+    TOTAL_NODES=$(kind get nodes --name="${NAME}" | wc -l | xargs)
     echo ""
     echo "Installing Demo App 'GoogleCloudPlatform/microservices-demo'..."
-    ${KUBECTL} create -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/refs/heads/main/release/kubernetes-manifests.yaml
-    return $?
+    echo "Waiting for all 'calico-node' status to become live & ready..."
+    for i in $(seq 1 120); do
+      readyNodes=$(${KUBECTL} logs --ignore-errors=true -n calico-system -c calico-node -l k8s-app=calico-node --max-log-requests="${TOTAL_NODES}" --tail=1000 | grep -c -i 'overall health status changed: live=true ready=true' | xargs)
+      if [[ "${readyNodes}" == "${TOTAL_NODES}" ]]; then
+        echo "${readyNodes} of ${TOTAL_NODES} nodes are ready - installing demo app now..."
+        READY=true
+        break
+      else
+        echo "Only ${readyNodes} of ${TOTAL_NODES} nodes are ready..."
+      fi
+      sleep 2
+    done
+    if [[ "${READY}" == "true" ]]; then
+      ${KUBECTL} create -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/refs/heads/main/release/kubernetes-manifests.yaml
+      return $?
+    else
+      echo "ERROR: Not all nodes are ready after waiting too long - exiting..."
+      return 1
+    fi
   fi
   return 0
 }
@@ -146,28 +190,9 @@ done
 
 ${KUBECTL} wait --timeout=30s --for=create clusterinformations.crd.projectcalico.org/default
 CALICO_VERSION=$(${KUBECTL} get "clusterinformations.crd.projectcalico.org/default" -o=json | jq -r '.spec.calicoVersion' | xargs)
-echo "Calico Version: ${CALICO_VERSION}"
-version_greater_equal "${CALICO_VERSION}" v3.30 && WHISKER=true
+echo ""
+echo "Installed Calico version: ${CALICO_VERSION}"
 
-if [[ "${WHISKER}" == "true" ]]; then
-  echo ""
-  echo "Deploying whisker..."
-
-  ${KUBECTL} create -f - <<EOF
-apiVersion: operator.tigera.io/v1
-kind: Whisker
-metadata:
-  name: default
-EOF
-
-  # NOTE: Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
-  if ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=10s tigerastatuses/whisker &>/dev/null; then
-    ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
-    while ! ${KUBECTL} wait --for='jsonpath={.status.conditions[?(@.type=="Available")].status}=True' --timeout=30s tigerastatuses/whisker 2>/dev/null; do
-      echo "Waiting for 'tigerastatus/whisker' resource to become available..."
-      sleep 2
-    done
-  fi
-fi
+install_whisker
 
 install_demo_app
