@@ -49,7 +49,7 @@ EOF
 
     # NOTE: Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
     if ! ${KUBECTL} wait --for=condition=available --timeout=10s tigerastatuses/whisker &>/dev/null; then
-      ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
+      # ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
       while ! ${KUBECTL} wait --for=condition=available --timeout=30s tigerastatuses/whisker 2>/dev/null; do
         echo "Waiting for 'tigerastatus/whisker' resource to become available..."
         sleep 2
@@ -58,29 +58,38 @@ EOF
   fi
 }
 
+function wait_for_calico_node_ready() {
+  echo "Waiting for all 'calico-node' status to become live & ready..."
+  TOTAL_NODES=$(${KIND} get nodes | wc -l | xargs)
+  FAILED=0
+  SUCCEEDED=0
+  for i in $(seq 1 100); do
+    if ${KUBECTL} wait pod --namespace=calico-system --for=condition=Ready --all --timeout=30s -l k8s-app=calico-node; then
+      SUCCEEDED=$((SUCCEEDED + 1))
+    else
+      FAILED=$((FAILED + 1))
+      SUCCEEDED=0
+    fi
+    if [[ "${SUCCEEDED}" -ge "${TOTAL_NODES}" ]]; then
+      echo "SUCCESS:  All calico-nodes are live & ready!"
+      return 0
+    else
+      echo "Waiting for ${TOTAL_NODES} consecutive successful ready wait attempts, we've only had ${SUCCEEDED} success and ${FAILED} failed..."
+    fi
+    sleep 20
+  done
+  return 1
+}
+
 function install_demo_app() {
   if [[ "${DEMOAPP}" == "true" || "${DEMO_APP}" == "true" ]]; then
-    READY=false
-    TOTAL_NODES=$(${KIND} get nodes | wc -l | xargs)
     echo ""
     echo "Installing Demo App 'GoogleCloudPlatform/microservices-demo'..."
-    echo "Waiting for all 'calico-node' status to become live & ready..."
-    for i in $(seq 1 120); do
-      readyNodes=$(${KUBECTL} logs --ignore-errors=true -n calico-system -c calico-node -l k8s-app=calico-node --max-log-requests="${TOTAL_NODES}" --tail=1000 | grep -c -i 'overall health status changed: live=true ready=true' | xargs)
-      if [[ "${readyNodes}" == "${TOTAL_NODES}" ]]; then
-        echo "${readyNodes} of ${TOTAL_NODES} nodes are ready - installing demo app now..."
-        READY=true
-        break
-      else
-        echo "Only ${readyNodes} of ${TOTAL_NODES} nodes are ready..."
-      fi
-      sleep 2
-    done
-    if [[ "${READY}" == "true" ]]; then
+    if wait_for_calico_node_ready; then
       ${KUBECTL} create -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/refs/heads/main/release/kubernetes-manifests.yaml
       return $?
     else
-      echo "ERROR: Not all nodes are ready after waiting too long - exiting..."
+      echo "ERROR: Not all calico-nodes are ready after waiting too long - exiting..."
       return 1
     fi
   fi
