@@ -40,7 +40,11 @@ function print_help() {
   echo "  WORKERS  - The number of worker nodes to create (default: 2)"
   echo "  PORT     - The K8s API server port to use (default: 6443)"
   echo "  ENCAP    - The tunnel encapsulation to use - valid values: IPIP|IPIPCrossSubnet|None|VXLAN|VXLANCrossSubnet (default: IPIP)"
-  echo "  DEMOAPP  - Install the demo app 'GoogleCloudPlatform/microservices-demo' (default: false)"
+  echo "  DEMOAPP  - Install the demo app - value values: true|false (default: false)"
+  echo "  OPYAML   - The operator yaml to use for installation (default: varies depending on value for VERSION)"
+  echo ""
+  echo "Dependencies:"
+  echo "  kind (hence docker), kubectl, jq, curl, grep, head, xargs"
 }
 
 function worker_nodes() {
