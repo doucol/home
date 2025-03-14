@@ -74,16 +74,17 @@ function calico_version() {
 }
 
 function install_whisker() {
-  if whisker_installed; then
-    return 0
-  fi
-
   CALICO_VERSION=$(calico_version)
-  if [[ "${WHISKER}" == "true" ]] && version_greater_equal "${CALICO_VERSION}" "v3.30"; then
+  if [[ "${WHISKER}" == "true" ]]; then
+    if ! version_greater_equal "${CALICO_VERSION}" "v3.30"; then
+      echo "Warning: This version of calico '${CALICO_VERSION}' may not support whisker"
+    fi
     echo ""
     echo "Deploying whisker..."
 
-    ${KUBECTL} create -f - <<<"$(whisker_cr)"
+    if ! whisker_installed; then
+      ${KUBECTL} create -f - <<<"$(whisker_cr)"
+    fi
 
     # NOTE: Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
     if ! ${KUBECTL} wait --for=condition=available --timeout=10s tigerastatuses/whisker &>/dev/null; then
