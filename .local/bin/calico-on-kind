@@ -17,12 +17,34 @@ PORT=${PORT:-6443}
 ENCAP=${ENCAP:-IPIP}
 KUBECTL="kubectl --context=kind-${NAME}"
 KIND="kind --name=${NAME}"
-WHISKER=false
-if [[ "${VERSION}" == "lasthash" || "${VERSION}" == "master" ]]; then
+WHISKER=${WHISKER:-}
+if [[ "${WHISKER}" == "" && ("${VERSION}" == "lasthash" || "${VERSION}" == "master") ]]; then
   WHISKER=true
 fi
+DEMOAPP=${DEMOAPP:-false}
+
+function print_help() {
+  echo "Usage: $0 [new|del|demo|whisker]"
+  echo ""
+  echo "  new      - Create a new kind cluster and install Calico OSS"
+  echo "  del      - Delete the kind cluster"
+  echo "  demo     - Install the demo app 'GoogleCloudPlatform/microservices-demo'"
+  echo "  whisker  - Install the whisker custom resource, if it does not exist"
+  echo ""
+  echo "Environment variables:"
+  echo "  NAME     - The name of the kind cluster (default: calico)"
+  echo "  VERSION  - The version of Calico to install - valid values: lasthash|latest|master|<version_tag> (default: master)"
+  echo "  DP       - Dataplane to use - valid values: BPF|Iptables|Nftables (default: BPF)"
+  echo "  PODNET   - The pod network CIDR to use (default: 10.244.0.0/16)"
+  echo "  SVCNET   - The service network CIDR to use (default: 10.96.0.0/16)"
+  echo "  WORKERS  - The number of worker nodes to create (default: 2)"
+  echo "  PORT     - The K8s API server port to use (default: 6443)"
+  echo "  ENCAP    - The tunnel encapsulation to use - valid values: IPIP|IPIPCrossSubnet|None|VXLAN|VXLANCrossSubnet (default: IPIP)"
+  echo "  DEMOAPP  - Install the demo app 'GoogleCloudPlatform/microservices-demo' (default: false)"
+}
 
 function worker_nodes() {
+  local wn=""
   for i in $(seq 1 "${WORKERS}"); do
     wn="# worker ${i}"$'\n'"- role: worker"$'\n'"${wn}"
   done
@@ -33,23 +55,35 @@ function version_greater_equal() {
   printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
 }
 
-function install_whisker() {
-  version_greater_equal "${CALICO_VERSION}" v3.30 && WHISKER=true
+function whisker_cr() {
+  printf '%s\n%s\n%s\n%s\n%s\n' "---" "apiVersion: operator.tigera.io/v1" "kind: Whisker" "metadata:" "  name: default"
+}
 
-  if [[ "${WHISKER}" == "true" ]]; then
+function whisker_installed() {
+  ${KUBECTL} get whisker.operator.tigera.io/default &>/dev/null
+}
+
+function calico_version() {
+  local cv
+  cv=$(${KUBECTL} get "clusterinformations.crd.projectcalico.org/default" -o=json | jq -r '.spec.calicoVersion' | xargs)
+  echo "${cv}"
+}
+
+function install_whisker() {
+  if whisker_installed; then
+    return 0
+  fi
+
+  CALICO_VERSION=$(calico_version)
+  if [[ "${WHISKER}" == "true" ]] && version_greater_equal "${CALICO_VERSION}" "v3.30"; then
     echo ""
     echo "Deploying whisker..."
 
-    ${KUBECTL} create -f - <<EOF
-apiVersion: operator.tigera.io/v1
-kind: Whisker
-metadata:
-  name: default
-EOF
+    ${KUBECTL} create -f - <<<"$(whisker_cr)"
 
     # NOTE: Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
     if ! ${KUBECTL} wait --for=condition=available --timeout=10s tigerastatuses/whisker &>/dev/null; then
-      # ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
+      ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
       while ! ${KUBECTL} wait --for=condition=available --timeout=30s tigerastatuses/whisker 2>/dev/null; do
         echo "Waiting for 'tigerastatus/whisker' resource to become available..."
         sleep 2
@@ -74,7 +108,7 @@ function wait_for_calico_node_ready() {
       echo "SUCCESS:  All calico-nodes are live & ready!"
       return 0
     else
-      echo "Waiting for ${TOTAL_NODES} consecutive successful ready wait attempts, we've only had ${SUCCEEDED} success and ${FAILED} failed..."
+      echo "Waiting for ${TOTAL_NODES} consecutive successful ready checks, we've only had ${SUCCEEDED} success and ${FAILED} failed..."
     fi
     sleep 20
   done
@@ -85,7 +119,7 @@ function install_demo_app() {
   if [[ "${DEMOAPP}" == "true" || "${DEMO_APP}" == "true" ]]; then
     echo ""
     echo "Installing Demo App 'GoogleCloudPlatform/microservices-demo'..."
-    if wait_for_calico_node_ready; then
+    if [[ "${NO_WAIT}" == "true" ]] || wait_for_calico_node_ready; then
       ${KUBECTL} create -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/refs/heads/main/release/kubernetes-manifests.yaml
       return $?
     else
@@ -96,32 +130,32 @@ function install_demo_app() {
   return 0
 }
 
-function preload_master_images() {
-  # If IMAGE_PRELOAD is set to true, we'll pull the images and load them into the kind cluster
-  # to accelerate the setup / install process (just 'master' for now)
-  if [[ "${VERSION}" == "master" && "${IMAGE_PRELOAD}" == "true" ]]; then
-    images=(
-      calico/node:master
-      calico/cni:master
-      calico/typha:master
-      calico/kube-controllers:master
-      calico/csi:master
-      calico/node-driver-registrar:master
-      calico/apiserver:master
-      calico/whisker:master
-      calico/whisker-backend:master
-      calico/goldmane:master
-      calico/guardian:master
-      quay.io/tigera/operator:master
-    )
-
-    # Loop through each image and pull it
-    for image in "${images[@]}"; do
-      docker pull "$image"
-      ${KIND} load docker-image "$image"
-    done
-  fi
-}
+# function preload_master_images() {
+#   # If IMAGE_PRELOAD is set to true, we'll pull the images and load them into the kind cluster
+#   # to accelerate the setup / install process (just 'master' for now)
+#   if [[ "${VERSION}" == "master" && "${IMAGE_PRELOAD}" == "true" ]]; then
+#     images=(
+#       calico/node:master
+#       calico/cni:master
+#       calico/typha:master
+#       calico/kube-controllers:master
+#       calico/csi:master
+#       calico/node-driver-registrar:master
+#       calico/apiserver:master
+#       calico/whisker:master
+#       calico/whisker-backend:master
+#       calico/goldmane:master
+#       calico/guardian:master
+#       quay.io/tigera/operator:master
+#     )
+#
+#     # Loop through each image and pull it
+#     for image in "${images[@]}"; do
+#       docker pull "$image"
+#       ${KIND} load docker-image "$image"
+#     done
+#   fi
+# }
 
 function install_docker_secrets() {
   if [[ -f "$HOME/.docker/config.json" ]]; then
@@ -153,6 +187,11 @@ function install_calico_oss() {
   sleep 2
 
   # Create calico custom resource configurations to kick off the install
+  local whiskercr=""
+  if [[ "${WHISKER}" == "true" ]]; then
+    whiskercr=$(whisker_cr)
+  fi
+
   ${KUBECTL} create -f - <<EOF
 apiVersion: operator.tigera.io/v1
 kind: Installation
@@ -174,6 +213,7 @@ kind: APIServer
 metadata:
   name: default
 spec: {}
+${whiskercr}
 EOF
 
   #${KUBECTL} create -f "https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/custom-resources.yaml"
@@ -184,7 +224,7 @@ EOF
   done
 
   ${KUBECTL} wait --timeout=30s --for=create clusterinformations.crd.projectcalico.org/default
-  CALICO_VERSION=$(${KUBECTL} get "clusterinformations.crd.projectcalico.org/default" -o=json | jq -r '.spec.calicoVersion' | xargs)
+  CALICO_VERSION=$(calico_version)
 
   echo ""
   echo "Installed Calico version: ${CALICO_VERSION}"
@@ -207,17 +247,10 @@ networking:
 EOF
 }
 
-function install_demo_only() {
-  DEMOAPP=true install_demo_app
-  exit $?
-}
-
 function create_kind_cluster_and_install() {
   create_kind_cluster
 
   install_docker_secrets
-
-  preload_master_images
 
   install_calico_oss
 
@@ -228,11 +261,15 @@ function create_kind_cluster_and_install() {
 
 function main() {
   if [[ "${1}" == "demo" ]]; then
-    install_demo_only
-  elif [[ "${1}" == "help" ]]; then
-    echo "help is on the way..."
-  else
+    DEMOAPP=true NO_WAIT=true install_demo_app
+  elif [[ "${1}" == "new" ]]; then
     create_kind_cluster_and_install
+  elif [[ "${1}" == "whisker" ]]; then
+    WHISKER=true install_whisker
+  elif [[ "${1}" == "del" || "${1}" == "delete" ]]; then
+    ${KIND} delete cluster
+  else
+    print_help
   fi
 }
 
