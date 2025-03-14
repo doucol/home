@@ -15,13 +15,13 @@ SVCNET=${SVCNET:-10.96.0.0/16}
 WORKERS=${WORKERS:-2}
 PORT=${PORT:-6443}
 ENCAP=${ENCAP:-IPIP}
-KUBECTL="kubectl --context=kind-${NAME}"
-KIND="kind --name=${NAME}"
+DEMOAPP=${DEMOAPP:-false}
 WHISKER=${WHISKER:-}
 if [[ "${WHISKER}" == "" && ("${VERSION}" == "lasthash" || "${VERSION}" == "master") ]]; then
   WHISKER=true
 fi
-DEMOAPP=${DEMOAPP:-false}
+KUBECTL="kubectl --context=kind-${NAME}"
+KIND="kind --name=${NAME}"
 
 function print_help() {
   echo "Usage: $0 [new|del|demo|whisker]"
