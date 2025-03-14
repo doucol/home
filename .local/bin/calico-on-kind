@@ -8,8 +8,8 @@ set -o pipefail
 # sudo sysctl -p
 
 NAME=${NAME:-calico}
-VERSION=${VERSION:-master}
-DP=${DP:-BPF}
+VERSION=${VERSION:-lasthash}
+DP=${DP:-Iptables}
 PODNET=${PODNET:-10.244.0.0/16}
 SVCNET=${SVCNET:-10.96.0.0/16}
 WORKERS=${WORKERS:-2}
@@ -20,6 +20,7 @@ WHISKER=${WHISKER:-}
 if [[ "${WHISKER}" == "" && ("${VERSION}" == "lasthash" || "${VERSION}" == "master") ]]; then
   WHISKER=true
 fi
+OPYAML=${OPYAML:-}
 KUBECTL="kubectl --context=kind-${NAME}"
 KIND="kind --name=${NAME}"
 
@@ -27,6 +28,7 @@ function print_help() {
   echo "Usage: $0 [new|del|demo|whisker]"
   echo ""
   echo "  new      - Create a new kind cluster and install Calico OSS"
+  echo "             (this will first delete any existing cluster named '${NAME}'"
   echo "  del      - Delete the kind cluster"
   echo "  demo     - Install the demo app 'GoogleCloudPlatform/microservices-demo'"
   echo "  whisker  - Install the whisker custom resource, if it does not exist"
@@ -45,6 +47,38 @@ function print_help() {
   echo ""
   echo "Dependencies:"
   echo "  kind (hence docker), kubectl, jq, curl, grep, head, xargs"
+}
+
+function render_env_vars() {
+  if [[ "${VERSION}" == "lasthash" && "${OPYAML}" == "" ]]; then
+    OPYAML=$(curl -s https://latest-os.docs.eng.tigera.net/master.txt | xargs)manifests/tigera-operator.yaml
+  elif [[ "${VERSION}" == "latest" && "${OPYAML}" == "" ]]; then
+    VERSION=$(curl -s "https://api.github.com/repos/projectcalico/calico/tags" | jq -r '.[].name' | grep -E 'v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 | xargs)
+  fi
+  OPYAML=${OPYAML:-"https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/tigera-operator.yaml"}
+}
+
+function confirm_state() {
+  echo ""
+  echo "Existing state:"
+  echo "  NAME     - ${NAME}"
+  echo "  VERSION  - ${VERSION}"
+  echo "  DP       - ${DP}"
+  echo "  PODNET   - ${PODNET}"
+  echo "  SVCNET   - ${SVCNET}"
+  echo "  WORKERS  - ${WORKERS}"
+  echo "  PORT     - ${PORT}"
+  echo "  ENCAP    - ${ENCAP}"
+  echo "  DEMOAPP  - ${DEMOAPP}"
+  echo "  OPYAML   - ${OPYAML}"
+  echo ""
+  read -p "Continue y/N? " -n 1 -r REPLY
+  echo ""
+  if [[ "${REPLY}" =~ ^[Yy]$ ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 function worker_nodes() {
@@ -268,7 +302,12 @@ function main() {
   if [[ "${1}" == "demo" ]]; then
     DEMOAPP=true NO_WAIT=true install_demo_app
   elif [[ "${1}" == "new" ]]; then
-    create_kind_cluster_and_install
+    render_env_vars
+    if confirm_state; then
+      create_kind_cluster_and_install
+    else
+      echo "Exiting..."
+    fi
   elif [[ "${1}" == "whisker" ]]; then
     WHISKER=true install_whisker
   elif [[ "${1}" == "del" || "${1}" == "delete" ]]; then
