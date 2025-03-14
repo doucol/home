@@ -46,7 +46,7 @@ function print_help() {
   echo "  OPYAML   - The operator yaml to use for installation (default: varies depending on value for VERSION)"
   echo ""
   echo "Dependencies:"
-  echo "  kind (hence docker), kubectl, jq, curl, grep, head, xargs"
+  echo "  kind (hence docker), kubectl, jq, curl, sort, grep, head, xargs"
 }
 
 function render_env_vars() {
