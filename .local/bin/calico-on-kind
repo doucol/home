@@ -35,7 +35,7 @@ function print_help() {
   echo ""
   echo "Environment variables:"
   echo "  NAME     - The name of the kind cluster (default: calico)"
-  echo "  VERSION  - The version of Calico to install - valid values: lasthash|latest|master|<version_tag> (default: master)"
+  echo "  VERSION  - The version of Calico to install - valid values: lasthash|latest|master|<version_tag> (default: lasthash)"
   echo "  DP       - Dataplane to use - valid values: BPF|Iptables|Nftables (default: Nftables)"
   echo "  PODNET   - The pod network CIDR to use (default: 10.244.0.0/16)"
   echo "  SVCNET   - The service network CIDR to use (default: 10.96.0.0/16)"
