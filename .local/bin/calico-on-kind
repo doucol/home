@@ -6,6 +6,8 @@ set -o pipefail
 # echo fs.inotify.max_user_watches=655360 | sudo tee -a /etc/sysctl.conf
 # echo fs.inotify.max_user_instances=1280 | sudo tee -a /etc/sysctl.conf
 # sudo sysctl -p
+
+# Setup defaults
 OSNAME=$(uname -s)
 DEFAULT_DP=Nftables
 DEFAULT_ENCAP=VXLANCrossSubnet
@@ -14,6 +16,7 @@ if [[ "${OSNAME}" == "Darwin" ]]; then
   DEFAULT_ENCAP=IPIP
 fi
 
+# Establish env vars
 NAME=${NAME:-calico}
 VERSION=${VERSION:-lasthash}
 DP=${DP:-$DEFAULT_DP}
