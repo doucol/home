@@ -9,12 +9,12 @@ set -o pipefail
 
 NAME=${NAME:-calico}
 VERSION=${VERSION:-lasthash}
-DP=${DP:-Iptables}
+DP=${DP:-Nftables}
 PODNET=${PODNET:-10.244.0.0/16}
 SVCNET=${SVCNET:-10.96.0.0/16}
 WORKERS=${WORKERS:-2}
 PORT=${PORT:-6443}
-ENCAP=${ENCAP:-IPIP}
+ENCAP=${ENCAP:-VXLANCrossSubnet}
 DEMOAPP=${DEMOAPP:-false}
 WHISKER=${WHISKER:-}
 if [[ "${WHISKER}" == "" && ("${VERSION}" == "lasthash" || "${VERSION}" == "master") ]]; then
@@ -36,12 +36,12 @@ function print_help() {
   echo "Environment variables:"
   echo "  NAME     - The name of the kind cluster (default: calico)"
   echo "  VERSION  - The version of Calico to install - valid values: lasthash|latest|master|<version_tag> (default: master)"
-  echo "  DP       - Dataplane to use - valid values: BPF|Iptables|Nftables (default: BPF)"
+  echo "  DP       - Dataplane to use - valid values: BPF|Iptables|Nftables (default: Nftables)"
   echo "  PODNET   - The pod network CIDR to use (default: 10.244.0.0/16)"
   echo "  SVCNET   - The service network CIDR to use (default: 10.96.0.0/16)"
   echo "  WORKERS  - The number of worker nodes to create (default: 2)"
   echo "  PORT     - The K8s API server port to use (default: 6443)"
-  echo "  ENCAP    - The tunnel encapsulation to use - valid values: IPIP|IPIPCrossSubnet|None|VXLAN|VXLANCrossSubnet (default: IPIP)"
+  echo "  ENCAP    - The tunnel encapsulation to use - valid values: IPIP|IPIPCrossSubnet|None|VXLAN|VXLANCrossSubnet (default: VXLANCrossSubnet)"
   echo "  DEMOAPP  - Install the demo app - value values: true|false (default: false)"
   echo "  OPYAML   - The operator yaml to use for installation (default: varies depending on value for VERSION)"
   echo ""
@@ -97,8 +97,20 @@ function whisker_cr() {
   printf '%s\n%s\n%s\n%s\n%s\n' "---" "apiVersion: operator.tigera.io/v1" "kind: Whisker" "metadata:" "  name: default"
 }
 
-function whisker_installed() {
+function whisker_cr_installed() {
   ${KUBECTL} get whisker.operator.tigera.io/default &>/dev/null
+}
+
+function whisker_installed() {
+  if whisker_cr_installed; then
+    if ${KUBECTL} wait --for=condition=available --timeout=1s tigerastatuses/whisker &>/dev/null; then
+      if ${KUBECTL} wait pod --namespace=calico-system --timeout=1s --for=condition=ready -l=k8s-app=whisker ||
+        ${KUBECTL} wait pod --namespace=calico-system --timeout=1s --for=condition=ready -l=k8s-app=calico-whisker; then
+        return 0
+      fi
+    fi
+  fi
+  return 1
 }
 
 function calico_version() {
@@ -108,26 +120,33 @@ function calico_version() {
 }
 
 function install_whisker() {
+  if [[ "${WHISKER}" != "true" ]]; then
+    return 0
+  fi
   CALICO_VERSION=$(calico_version)
-  if [[ "${WHISKER}" == "true" ]]; then
-    if ! version_greater_equal "${CALICO_VERSION}" "v3.30"; then
-      echo "Warning: This version of calico '${CALICO_VERSION}' may not support whisker"
-    fi
-    echo ""
-    echo "Deploying whisker..."
+  if ! version_greater_equal "${CALICO_VERSION}" "v3.30"; then
+    echo "Warning: This version of calico '${CALICO_VERSION}' may not support whisker"
+  fi
 
-    if ! whisker_installed; then
-      ${KUBECTL} create -f - <<<"$(whisker_cr)"
-    fi
+  echo ""
+  echo "Deploying whisker..."
 
+  if whisker_installed; then
+    echo "Whisker is installed."
+    return 0
+  fi
+
+  if ! whisker_cr_installed; then
+    ${KUBECTL} create -f - <<<"$(whisker_cr)"
+  fi
+
+  if ! ${KUBECTL} wait --for=condition=available --timeout=30s tigerastatuses/whisker &>/dev/null; then
     # NOTE: Without restarting the operator it is hit-or-miss on whether we'll have whisker reliably deployed - need to dig into this more later
-    if ! ${KUBECTL} wait --for=condition=available --timeout=10s tigerastatuses/whisker &>/dev/null; then
-      ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
-      while ! ${KUBECTL} wait --for=condition=available --timeout=30s tigerastatuses/whisker 2>/dev/null; do
-        echo "Waiting for 'tigerastatus/whisker' resource to become available..."
-        sleep 2
-      done
-    fi
+    ${KUBECTL} delete pod --namespace=tigera-operator -l=k8s-app=tigera-operator
+    while ! ${KUBECTL} wait --for=condition=available --timeout=30s tigerastatuses/whisker 2>/dev/null; do
+      echo "Waiting for 'tigerastatus/whisker' resource to become available..."
+      sleep 2
+    done
   fi
 }
 
