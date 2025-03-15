@@ -6,15 +6,22 @@ set -o pipefail
 # echo fs.inotify.max_user_watches=655360 | sudo tee -a /etc/sysctl.conf
 # echo fs.inotify.max_user_instances=1280 | sudo tee -a /etc/sysctl.conf
 # sudo sysctl -p
+OSNAME=$(uname -s)
+DEFAULT_DP=Nftables
+DEFAULT_ENCAP=VXLANCrossSubnet
+if [[ "${OSNAME}" == "Darwin" ]]; then
+  DEFAULT_DP=Iptables
+  DEFAULT_ENCAP=IPIP
+fi
 
 NAME=${NAME:-calico}
 VERSION=${VERSION:-lasthash}
-DP=${DP:-Nftables}
+DP=${DP:-$DEFAULT_DP}
 PODNET=${PODNET:-10.244.0.0/16}
 SVCNET=${SVCNET:-10.96.0.0/16}
 WORKERS=${WORKERS:-2}
 PORT=${PORT:-6443}
-ENCAP=${ENCAP:-VXLANCrossSubnet}
+ENCAP=${ENCAP:-$DEFAULT_ENCAP}
 DEMOAPP=${DEMOAPP:-false}
 WHISKER=${WHISKER:-}
 if [[ "${WHISKER}" == "" && ("${VERSION}" == "lasthash" || "${VERSION}" == "master") ]]; then
@@ -318,23 +325,17 @@ function create_kind_cluster_and_install() {
 }
 
 function checkOS() {
-  local uname
   local machine
-  uname="$(uname -s)"
-  case "${uname}" in
+  case "${OSNAME}" in
   Linux*) machine=Linux ;;
   Darwin*) machine=Mac ;;
-  *) machine="UNKNOWN:${uname}" ;;
+  *) machine="${OSNAME}" ;;
   esac
   if [[ "${machine}" == "Linux" || "${machine}" == "Mac" ]]; then
     if [[ "${1}" == "show" ]]; then
       echo ""
       echo "You are running on ${machine}. This script should work as expected as long as you have the required dependencies."
       echo ""
-    fi
-    if [[ "${machine}" == "Mac" ]]; then
-      DP=Iptables
-      ENCAP=IPIP
     fi
   else
     echo ""
