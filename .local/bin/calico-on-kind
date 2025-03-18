@@ -125,8 +125,18 @@ function whisker_installed() {
 }
 
 function calico_version() {
+  local COUNT
   local cv
-  cv=$(${KUBECTL} get "clusterinformations.crd.projectcalico.org/default" -o=json | jq -r '.spec.calicoVersion' | xargs)
+  cv=null
+  COUNT=0
+  while [[ "${cv}" == "null" ]]; do
+    COUNT=$((COUNT + 1))
+    if [[ "${COUNT}" -gt 20 ]]; then
+      break
+    fi
+    cv=$(${KUBECTL} get "clusterinformations.crd.projectcalico.org/default" -o=json | jq -r '.spec.calicoVersion' | xargs)
+    sleep 2
+  done
   echo "${cv}"
 }
 
@@ -159,6 +169,8 @@ function install_whisker() {
       sleep 2
     done
   fi
+
+  echo "Whisker is installed."
 }
 
 function wait_for_calico_node_ready() {
