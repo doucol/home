@@ -103,7 +103,8 @@ function version_greater_equal() {
   printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
 }
 
-function whisker_cr() {
+function goldmain_whisker_crs() {
+  printf '%s\n%s\n%s\n%s\n%s\n' "---" "apiVersion: operator.tigera.io/v1" "kind: Goldmane" "metadata:" "  name: default"
   printf '%s\n%s\n%s\n%s\n%s\n' "---" "apiVersion: operator.tigera.io/v1" "kind: Whisker" "metadata:" "  name: default"
 }
 
@@ -257,7 +258,7 @@ function install_calico_oss() {
   # Create calico custom resource configurations to kick off the install
   local whiskercr=""
   if [[ "${WHISKER}" == "true" ]]; then
-    whiskercr=$(whisker_cr)
+    whiskercr=$(goldmain_whisker_crs)
   fi
 
   ${KUBECTL} create -f - <<EOF
