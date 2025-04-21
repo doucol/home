@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -e
-cd "$HOME/dev/ghostty"
-if [[ "$1" == "clean" ]]; then
-  sudo rm -rf "$HOME/dev/ghostty/.zig-cache" || true
-fi
-git checkout "$(git tag --sort=version:refname --list 'v*' | tail -1)"
-sudo /home/linuxbrew/.linuxbrew/bin/zig build -p /usr -Doptimize=ReleaseFast
-sudo update-desktop-database
